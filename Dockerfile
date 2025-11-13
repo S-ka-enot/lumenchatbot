@@ -1,6 +1,6 @@
 # Root Dockerfile for Coolify deployment (Backend service)
-# Based on backend/Dockerfile with adjusted paths for root context
-# This Dockerfile is used when Coolify detects the Python project
+# Multi-stage build with Poetry dependency management
+# This Dockerfile handles the complex project structure with backend and bot packages
 
 FROM python:3.10-slim as base
 
@@ -11,17 +11,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files and project metadata from backend
-COPY backend/pyproject.toml backend/poetry.lock ./
+# Copy minimal root pyproject.toml for Nixpacks detection
+COPY pyproject.toml ./
+
+# Copy actual backend dependencies
+COPY backend/pyproject.toml backend/poetry.lock ./backend/
 
 # Copy source code so Poetry can find packages during install
 COPY backend ./backend
 COPY bot ./bot
 
-# Install Poetry and dependencies
+# Install Poetry and dependencies from backend
 RUN pip install --no-cache-dir poetry && \
+    cd backend && \
     poetry config virtualenvs.create false && \
-    poetry install --only=main --no-interaction --no-ansi
+    poetry install --only=main --no-interaction --no-ansi && \
+    cd ..
 
 FROM python:3.10-slim
 
