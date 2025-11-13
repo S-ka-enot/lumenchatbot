@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy actual backend dependencies (no root pyproject.toml needed)
-COPY backend/pyproject.toml backend/poetry.lock ./backend/
+COPY backend/pyproject.toml backend/poetry.lock ./
 
 # Copy source code so Poetry can find packages during install
 COPY backend ./backend
