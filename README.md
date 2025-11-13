@@ -60,11 +60,6 @@ Service settings (recommended):
 
 См. подробные инструкции: `COOLIFY_BUILD_CONTEXT_FIX.md`
 
-- Frontend
-	- Build context: `frontend`
-	- Dockerfile path: `frontend/Dockerfile`
-	- Port: `80`
-
 Notes:
 
 - The frontend image already includes an `nginx` config (`frontend/nginx.conf`) and serves the built `dist/` files. No runtime file mounts are required for Coolify.
