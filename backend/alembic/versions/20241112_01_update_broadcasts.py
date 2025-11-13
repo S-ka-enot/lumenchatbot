@@ -27,6 +27,11 @@ def upgrade() -> None:
     bind = op.get_bind()
     dialect_name = bind.dialect.name if bind else None
     inspector = sa.inspect(bind)
+    
+    # If scheduled_broadcasts table does not exist (fresh DB), skip this migration
+    if not inspector.has_table('scheduled_broadcasts'):
+        return
+    
     columns = _get_columns(inspector, 'scheduled_broadcasts')
 
     if 'channel_id' not in columns:
@@ -73,6 +78,11 @@ def downgrade() -> None:
     bind = op.get_bind()
     dialect_name = bind.dialect.name if bind else None
     inspector = sa.inspect(bind)
+    
+    # If scheduled_broadcasts table does not exist, nothing to downgrade
+    if not inspector.has_table('scheduled_broadcasts'):
+        return
+    
     columns = _get_columns(inspector, 'scheduled_broadcasts')
 
     if 'media_files' in columns:
