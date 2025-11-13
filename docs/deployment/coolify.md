@@ -62,14 +62,19 @@
    - `Create Service → Dockerfile → Git Repository`
    - Repo URL: `https://github.com/<org>/lumenchatbot.git`
    - Branch: нужная (например, `main`)
-   - Build: `backend/Dockerfile`
+   - **Build Context:** корень репозитория (`.` или оставить пустым)
+   - **Dockerfile Path:** `backend/Dockerfile`
    - Entry command оставляем по умолчанию (`uvicorn …`) – миграции выполнятся через entrypoint
    - Проброс портов: `8000`
 4. **Frontend**:
-   - Тип: Dockerfile, путь `frontend/Dockerfile`
+   - Тип: Dockerfile
+   - **Build Context:** `frontend/`
+   - **Dockerfile Path:** `frontend/Dockerfile` (или `Dockerfile` если build context = frontend/)
    - Порт: `80`
 5. **Bot**:
-   - Тип: Dockerfile, путь `bot/Dockerfile`
+   - Тип: Dockerfile
+   - **Build Context:** корень репозитория (`.` или оставить пустым)
+   - **Dockerfile Path:** `bot/Dockerfile`
    - Запустить без публикации порта
 6. Связываем сервисы с Redis/PostgreSQL через *Connected services* и прокидываем переменные.
 

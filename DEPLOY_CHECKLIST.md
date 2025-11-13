@@ -27,8 +27,8 @@
 
 #### Backend
 - **Тип:** Dockerfile
-- **Dockerfile путь:** `backend/Dockerfile`
-- **Build context:** корень репозитория
+- **Build Context:** корень репозитория (`.` или оставить пустым)
+- **Dockerfile Path:** `backend/Dockerfile`
 - **Порт:** `8000`
 - **Переменные окружения:**
   - `ENVIRONMENT=production`
@@ -47,8 +47,8 @@
 
 #### Bot
 - **Тип:** Dockerfile
-- **Dockerfile путь:** `bot/Dockerfile`
-- **Build context:** корень репозитория
+- **Build Context:** корень репозитория (`.` или оставить пустым)
+- **Dockerfile Path:** `bot/Dockerfile`
 - **Порт:** не требуется
 - **Переменные окружения:**
   - `BOT_TOKEN=<токен бота>`
@@ -57,8 +57,8 @@
 
 #### Frontend
 - **Тип:** Dockerfile
-- **Dockerfile путь:** `frontend/Dockerfile`
-- **Build context:** `frontend/`
+- **Build Context:** `frontend/`
+- **Dockerfile Path:** `Dockerfile` (или `frontend/Dockerfile` если build context = корень)
 - **Порт:** `80`
 - **Переменные окружения:**
   - `VITE_BACKEND_API_URL=https://<backend-domain>/api/v1`
