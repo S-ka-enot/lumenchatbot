@@ -11,10 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy minimal root pyproject.toml for Nixpacks detection
-COPY pyproject.toml ./
-
-# Copy actual backend dependencies
+# Copy actual backend dependencies (no root pyproject.toml needed)
 COPY backend/pyproject.toml backend/poetry.lock ./backend/
 
 # Copy source code so Poetry can find packages during install
