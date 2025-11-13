@@ -1,14 +1,18 @@
 version: '3.8'
 
+# LumenPay Bot - Docker Compose Configuration
+# Ports: Backend 8001, Frontend 3000, Redis 6380
+# Change these ports if they conflict with other services on your server
+
 services:
-  # База данных SQLite (монтируется как volume)
+  # Backend API (FastAPI)
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: lumenpay-backend
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -45,14 +49,14 @@ services:
     networks:
       - lumenpay-network
 
-  # Frontend (Nginx + статические файлы)
+  # Frontend (Nginx + React статические файлы)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: lumenpay-frontend
     ports:
-      - "80:80"
+      - "3000:80"
     depends_on:
       - backend
     restart: unless-stopped
@@ -64,7 +68,7 @@ services:
     image: redis:7-alpine
     container_name: lumenpay-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped

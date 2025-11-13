@@ -57,7 +57,7 @@ You'll create three services: **backend**, **bot**, and **frontend**. You can do
    - **Service Name:** `lumenpay-backend`
    - **Build Context:** `./` (repository root)
    - **Dockerfile Path:** `backend/Dockerfile`
-   - **Port:** `8000`
+   - **Port:** `8001` (exposed as `8001:8000`)
    - **Restart Policy:** Always
    - **Health Check:** HTTP GET `http://localhost:8000/api/v1/health`
 
@@ -122,7 +122,7 @@ You'll create three services: **backend**, **bot**, and **frontend**. You can do
    - **Service Name:** `lumenpay-frontend`
    - **Build Context:** `frontend` (important!)
    - **Dockerfile Path:** `Dockerfile` (relative to build context)
-   - **Port:** `80`
+   - **Port:** `3000` (exposed as `3000:80`)
    - **Restart Policy:** Always
    - **Health Check:** HTTP GET `http://localhost/healthz`
 
@@ -135,7 +135,7 @@ You'll create three services: **backend**, **bot**, and **frontend**. You can do
 1. Click **New Service** → **Docker** → Configure:
    - **Service Name:** `lumenpay-redis`
    - **Image:** `redis:7-alpine`
-   - **Port:** `6379`
+   - **Port:** `6380` (exposed as `6380:6379`)
    - **Restart Policy:** Always
    - **Volumes:** Create persistent volume `/data`
 
