@@ -15,11 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend ./backend
 COPY bot ./bot
 
-# Install Poetry and dependencies from backend
-RUN pip install --no-cache-dir poetry && \
-    cd backend && \
+# Install Poetry and copy the source code afterwards
+RUN pip install --no-cache-dir poetry
+
+# Install dependencies only (don't build/install the package itself)
+RUN cd backend && \
     poetry config virtualenvs.create false && \
-    poetry install --only=main --no-interaction --no-ansi && \
+    poetry install --no-root --only=main --no-interaction --no-ansi && \
     cd ..
 
 FROM python:3.10-slim
