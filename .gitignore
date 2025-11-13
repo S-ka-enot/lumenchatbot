@@ -1,0 +1,50 @@
+# Общие артефакты
+__pycache__/
+*.py[cod]
+*.so
+.DS_Store
+*.log
+*.sqlite3
+
+# Python / Poetry
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+*.cover
+htmlcov/
+poetry.lock
+
+# Alembic
+backend/alembic/versions/*.pyc
+
+# Node / Frontend
+node_modules/
+dist/
+.parcel-cache/
+.vite/
+*.tsbuildinfo
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Env files
+.env
+.env.*
+
+# Docker
+*.pid
+*.pid.lock
+logs/
+
+# IDE
+.idea/
+.vscode/
+.history/
+
+# MacOS
+._*
+.AppleDouble
+.LSOverride
+

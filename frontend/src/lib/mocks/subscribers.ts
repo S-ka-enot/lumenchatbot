@@ -1,0 +1,51 @@
+import type { SubscriberListItem } from '@/lib/api'
+
+export const SUBSCRIBERS_MOCK: SubscriberListItem[] = [
+  {
+    id: 1,
+    bot_id: 1,
+    telegram_id: 123456789,
+    username: 'belkina',
+    first_name: 'Екатерина',
+    last_name: 'Белкина',
+    full_name: 'Екатерина Белкина',
+    phone_number: '+7 999 000-00-00',
+    tariff: 'Premium',
+    expires_at: '2025-12-12T10:00:00+03:00',
+    status: 'active',
+    is_blocked: false,
+    active_subscription_id: 101,
+  },
+  {
+    id: 2,
+    bot_id: 1,
+    telegram_id: 987654321,
+    username: 'msokolova',
+    first_name: 'Мария',
+    last_name: 'Соколова',
+    full_name: 'Мария Соколова',
+    phone_number: '+7 999 111-11-11',
+    tariff: 'Standard',
+    expires_at: '2025-12-03T10:00:00+03:00',
+    status: 'pending',
+    is_blocked: false,
+    active_subscription_id: null,
+  },
+  {
+    id: 3,
+    bot_id: 1,
+    telegram_id: 555666777,
+    username: 'akuznecov',
+    first_name: 'Анна',
+    last_name: 'Кузнецова',
+    full_name: 'Анна Кузнецова',
+    phone_number: '+7 999 222-22-22',
+    tariff: 'Premium',
+    expires_at: '2025-12-21T10:00:00+03:00',
+    status: 'active',
+    is_blocked: false,
+    active_subscription_id: 103,
+  },
+]
+
+

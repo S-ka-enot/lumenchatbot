@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # База данных SQLite (монтируется как volume)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lumenpay-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./backups:/app/backups
+      - ./logs/backend:/app/logs
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite+aiosqlite:///./data/lumenpay.db
+      - SYNC_DATABASE_URL=sqlite:///./data/lumenpay.db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - lumenpay-network
+
+  # Telegram бот
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    container_name: lumenpay-bot
+    volumes:
+      - ./config:/app/config
+      - ./logs/bot:/app/logs
+    environment:
+      - ENVIRONMENT=production
+      - BACKEND_BASE_URL=http://backend:8000
+      - BACKEND_API_PREFIX=/api/v1
+    depends_on:
+      - backend
+      - redis
+    restart: unless-stopped
+    networks:
+      - lumenpay-network
+
+  # Frontend (Nginx + статические файлы)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lumenpay-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - lumenpay-network
+
+  # Redis для кэширования
+  redis:
+    image: redis:7-alpine
+    container_name: lumenpay-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - lumenpay-network
+
+  # База данных (опционально, если захотите мигрировать с SQLite)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: lumenpay-postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     - POSTGRES_DB=lumenpay
+  #     - POSTGRES_USER=lumenpay
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - lumenpay-network
+
+volumes:
+  redis_data:
+  # postgres_data:
+
+networks:
+  lumenpay-network:
+    driver: bridge
