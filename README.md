@@ -35,18 +35,30 @@ These instructions describe a minimal setup to deploy the project to Coolify usi
 - Connect your GitHub repository to Coolify.
 - Add three services in Coolify (or one stack depending on your plan): `backend`, `bot` and `frontend`.
 
+**⚠️ КРИТИЧЕСКИ ВАЖНО: Build Context**
+
 Service settings (recommended):
 
 - Backend
-	- Build context: repository root
-	- Dockerfile path: `backend/Dockerfile`
+	- **Build Context:** `.` (корень репозитория) или оставить **пустым**
+	- **Dockerfile Path:** `backend/Dockerfile`
 	- Port: `8000`
 	- Environment variables: set `DATABASE_URL`, `SYNC_DATABASE_URL`, `REDIS_URL`, `ENVIRONMENT` and any secrets from `config/env.example`.
 
 - Bot
-	- Build context: repository root
-	- Dockerfile path: `bot/Dockerfile`
+	- **Build Context:** `.` (корень репозитория) или оставить **пустым**
+	- **Dockerfile Path:** `bot/Dockerfile`
 	- Environment variables: `BACKEND_BASE_URL`, `BACKEND_API_PREFIX`, token secrets, etc.
+
+- Frontend
+	- **Build Context:** `frontend/`
+	- **Dockerfile Path:** `Dockerfile`
+	- Port: `80`
+	- Environment variables: `VITE_BACKEND_API_URL`
+
+**Если видите ошибку `"/backend": not found` или `"/bot": not found` - проверьте Build Context!**
+
+См. подробные инструкции: `COOLIFY_BUILD_CONTEXT_FIX.md`
 
 - Frontend
 	- Build context: `frontend`
