@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files and project metadata
-COPY pyproject.toml poetry.lock ./
+COPY backend/pyproject.toml backend/poetry.lock ./
 
 # Copy source code so Poetry can find packages during install
 COPY backend ./backend
