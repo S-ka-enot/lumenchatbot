@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy dependency files and project metadata
 COPY pyproject.toml poetry.lock ./
 
+# Copy source code so Poetry can find packages during install
+COPY backend ./backend
+COPY bot ./bot
+
 # Install Poetry and dependencies
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
