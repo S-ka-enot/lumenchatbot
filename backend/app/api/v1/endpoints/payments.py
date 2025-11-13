@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.admin import PaymentListItem
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.base import PaginatedResponse
-from backend.app.services.payments import PaymentService
-from backend.app.services.payment_providers import PaymentProviderSettingsService
+from ....api.deps import get_current_admin, get_db
+from ....schemas.admin import PaymentListItem
+from ....schemas.auth import MeResponse
+from ....schemas.base import PaginatedResponse
+from ....services.payments import PaymentService
+from ....services.payment_providers import PaymentProviderSettingsService
 
 router = APIRouter()
 

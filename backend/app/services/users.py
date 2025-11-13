@@ -166,12 +166,12 @@ class UserService:
 
         if user.subscriptions:
             latest_subscription = max(
-                user.subscriptions, key=lambda item: item.end_date or datetime.min
+                user.subscriptions, key=lambda item: item.expires_at or datetime.min
             )
             if latest_subscription:
                 subscription_end = self._ensure_timezone(
-                    latest_subscription.end_date
-                ) if latest_subscription.end_date else None
+                    latest_subscription.expires_at
+                ) if latest_subscription.expires_at else None
         if subscription_end is None and user.subscription_end:
             subscription_end = self._ensure_timezone(user.subscription_end)
 
@@ -597,12 +597,21 @@ class UserService:
             await self.session.flush()
             payment_id = payment.id
 
+        # Получаем каналы для плана
+        channel_id = 1  # Временное значение по умолчанию
+        if plan_id:
+            from ..models.subscription_plan import SubscriptionPlan
+            plan_obj = await self.session.get(SubscriptionPlan, plan_id)
+            if plan_obj and plan_obj.channels:
+                channel_id = plan_obj.channels[0].id
+        
         subscription = Subscription(
             bot_id=user.bot_id,
             user_id=user.id,
+            channel_id=channel_id,
             payment_id=payment_id,
-            start_date=start_date,
-            end_date=end_date,
+            started_at=start_date,
+            expires_at=end_date,
             is_active=True,
             auto_renew=False,
             plan_id=plan_id,
@@ -667,12 +676,21 @@ class UserService:
             await self.session.flush()
             payment_id = payment.id
 
+        # Получаем каналы для плана
+        channel_id = 1  # Временное значение по умолчанию
+        if plan_id:
+            from ..models.subscription_plan import SubscriptionPlan
+            plan_obj = await self.session.get(SubscriptionPlan, plan_id)
+            if plan_obj and plan_obj.channels:
+                channel_id = plan_obj.channels[0].id
+        
         subscription = Subscription(
             bot_id=user.bot_id,
             user_id=user.id,
+            channel_id=channel_id,
             payment_id=payment_id,
-            start_date=start_date,
-            end_date=end_date,
+            started_at=start_date,
+            expires_at=end_date,
             is_active=True,
             auto_renew=False,
             plan_id=plan_id,
@@ -739,12 +757,21 @@ class UserService:
             await self.session.flush()
             payment_id = payment.id
 
+        # Получаем каналы для плана
+        channel_id = 1  # Временное значение по умолчанию
+        if plan_id:
+            from ..models.subscription_plan import SubscriptionPlan
+            plan_obj = await self.session.get(SubscriptionPlan, plan_id)
+            if plan_obj and plan_obj.channels:
+                channel_id = plan_obj.channels[0].id
+        
         subscription = Subscription(
             bot_id=user.bot_id,
             user_id=user.id,
+            channel_id=channel_id,
             payment_id=payment_id,
-            start_date=start_date,
-            end_date=end_date,
+            started_at=start_date,
+            expires_at=end_date,
             is_active=True,
             auto_renew=False,
             plan_id=plan_id,
@@ -795,7 +822,7 @@ class UserService:
         for subscription in user.subscriptions:
             if (
                 latest_subscription is None
-                or subscription.end_date > latest_subscription.end_date
+                or subscription.expires_at > latest_subscription.expires_at
             ):
                 latest_subscription = subscription
 
@@ -804,7 +831,7 @@ class UserService:
             for subscription in user.subscriptions:
                 subscription.is_active = subscription is latest_subscription
 
-            end_date = latest_subscription.end_date
+            end_date = latest_subscription.expires_at
             if end_date and end_date.tzinfo is None:
                 end_date = end_date.replace(tzinfo=timezone.utc)
             user.subscription_end = end_date
@@ -816,7 +843,7 @@ class UserService:
     def _to_subscriber_list_item(self, user: User) -> SubscriberListItem:
         latest_subscription: Subscription | None = None
         if user.subscriptions:
-            latest_subscription = max(user.subscriptions, key=lambda item: item.end_date)
+            latest_subscription = max(user.subscriptions, key=lambda item: item.expires_at)
 
         full_name = " ".join(
             part for part in [user.first_name or "", user.last_name or ""] if part
@@ -827,7 +854,7 @@ class UserService:
         if user.is_blocked:
             status = "blocked"
         elif latest_subscription:
-            subscription_end = latest_subscription.end_date
+            subscription_end = latest_subscription.expires_at
             if subscription_end and subscription_end.tzinfo is None:
                 subscription_end = subscription_end.replace(tzinfo=timezone.utc)
             if subscription_end and subscription_end < now:
@@ -838,7 +865,7 @@ class UserService:
                 status = "pending"
 
         if latest_subscription:
-            subscription_end = latest_subscription.end_date
+            subscription_end = latest_subscription.expires_at
             if subscription_end and subscription_end.tzinfo is None:
                 subscription_end = subscription_end.replace(tzinfo=timezone.utc)
         else:

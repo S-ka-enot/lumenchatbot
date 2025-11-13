@@ -8,16 +8,16 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.admin import (
+from ....api.deps import get_current_admin, get_db
+from ....schemas.admin import (
     SubscriberCreate,
     SubscriberListItem,
     SubscriberUpdate,
     SubscriptionExtendRequest,
 )
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.base import PaginatedResponse
-from backend.app.services.users import UserService
+from ....schemas.auth import MeResponse
+from ....schemas.base import PaginatedResponse
+from ....services.users import UserService
 
 router = APIRouter()
 

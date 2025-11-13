@@ -40,6 +40,17 @@ class PaymentProvider(str, enum.Enum):
     STRIPE = "stripe"
 
 
+class PaymentStatusEnum(str, enum.Enum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+# Для обратной совместимости
+PaymentStatus = PaymentStatusEnum
+
+
 class Payment(TimestampMixin, Base):
     __tablename__ = "payments"
     __table_args__ = (
@@ -51,11 +62,16 @@ class Payment(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="RUB", nullable=False)
-    payment_provider: Mapped[PaymentProvider] = mapped_column(Enum(PaymentProvider), nullable=False)
+    payment_provider: Mapped[PaymentProvider] = mapped_column(Enum(PaymentProvider, native_enum=False), nullable=False)
     external_id: Mapped[str | None] = mapped_column(String(255))
-    status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False
+    status: Mapped[PaymentStatusEnum] = mapped_column(
+        String(20), default=PaymentStatusEnum.PENDING.value, nullable=False
     )
+    
+    @property
+    def status_enum(self) -> PaymentStatusEnum:
+        """Возвращает статус как enum."""
+        return PaymentStatusEnum(self.status)
     description: Mapped[str | None] = mapped_column(Text)
     payload: Mapped[dict | None] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"), default=dict

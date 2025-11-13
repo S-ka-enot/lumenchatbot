@@ -248,6 +248,20 @@ export type BotTokenUpdatePayload = {
   token: string
 }
 
+export type BotCreatePayload = {
+  name: string
+  slug: string
+  timezone?: string
+  is_active?: boolean
+}
+
+export type BotUpdatePayload = {
+  name?: string
+  slug?: string
+  timezone?: string
+  is_active?: boolean
+}
+
 export type PaginatedResponse<T> = {
   items: T[]
   total: number
@@ -353,9 +367,23 @@ export const botsApi = {
     return data
   },
 
+  async create(payload: BotCreatePayload): Promise<BotDetails> {
+    const { data } = await apiClient.post<BotDetails>('/bots', payload)
+    return data
+  },
+
+  async update(botId: number, payload: BotUpdatePayload): Promise<BotDetails> {
+    const { data } = await apiClient.put<BotDetails>(`/bots/${botId}`, payload)
+    return data
+  },
+
   async updateToken(botId: number, payload: BotTokenUpdatePayload): Promise<BotDetails> {
     const { data } = await apiClient.put<BotDetails>(`/bots/${botId}/token`, payload)
     return data
+  },
+
+  async delete(botId: number): Promise<void> {
+    await apiClient.delete(`/bots/${botId}`)
   },
 }
 

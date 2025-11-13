@@ -19,6 +19,8 @@ from .core.logging import configure_logging
 from .core.rate_limit import limiter
 from .db.session import AsyncSessionLocal, async_engine
 from .services.admins import AdminService
+from .services.bots import BotService
+from .services.payment_providers import PaymentProviderSettingsService
 
 logger = logging.getLogger("lumenpay.backend")
 
@@ -47,6 +49,138 @@ async def ensure_default_admin() -> None:
         )
 
 
+async def ensure_yookassa_settings() -> None:
+    """Автоматически восстанавливает настройки YooKassa из переменных окружения при старте."""
+    import os
+    from pathlib import Path
+    
+    # Пытаемся загрузить настройки из env.local напрямую, если они не загрузились через pydantic
+    shop_id = settings.yookassa_shop_id
+    api_key = settings.yookassa_api_key
+    
+    if not shop_id or not api_key:
+        # Пытаемся прочитать напрямую из файла (относительно корня проекта)
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        env_file = project_root / "config" / "env.local"
+        if not env_file.exists():
+            # Пробуем относительно текущей директории
+            env_file = Path("config/env.local")
+        
+        if env_file.exists():
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if line.startswith("YOOKASSA_SHOP_ID="):
+                            shop_id = line.split("=", 1)[1].strip()
+                        elif line.startswith("YOOKASSA_API_KEY="):
+                            api_key_str = line.split("=", 1)[1].strip()
+                            from pydantic import SecretStr
+                            api_key = SecretStr(api_key_str)
+                if shop_id and api_key:
+                    logger.info("Loaded YooKassa settings from env.local file")
+            except Exception as exc:
+                logger.debug("Failed to read YooKassa settings from env.local: %s", exc)
+    
+    logger.info("Checking YooKassa settings on startup (shop_id: %s, has_api_key: %s)", 
+                shop_id, bool(api_key))
+    
+    if not shop_id or not api_key:
+        logger.debug("Skipping YooKassa settings restoration: credentials not provided")
+        return
+
+    logger.info("Restoring YooKassa settings from environment variables on startup...")
+    
+    async with AsyncSessionLocal() as session:
+        try:
+            provider_service = PaymentProviderSettingsService(session)
+            # Всегда обновляем настройки из env при старте, чтобы гарантировать работоспособность
+            api_key_value = api_key.get_secret_value() if hasattr(api_key, 'get_secret_value') else str(api_key)
+            await provider_service.upsert_yookassa_settings(
+                shop_id=shop_id,
+                api_key=api_key_value,
+            )
+            logger.info(
+                "YooKassa settings restored from environment variables (shop_id: %s)",
+                shop_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to restore YooKassa settings from environment: %s",
+                exc,
+                exc_info=True,
+            )
+
+
+async def ensure_bot_token() -> None:
+    """Автоматически восстанавливает токен бота из переменных окружения при старте."""
+    from pathlib import Path
+    
+    # Пытаемся загрузить токен из настроек
+    bot_token = settings.telegram_bot_token
+    
+    if not bot_token:
+        # Пытаемся прочитать напрямую из файла (относительно корня проекта)
+        project_root = Path(__file__).parent.parent.parent
+        env_file = project_root / "config" / "env.local"
+        if not env_file.exists():
+            # Пробуем относительно текущей директории
+            env_file = Path("config/env.local")
+        
+        if env_file.exists():
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if line.startswith("TELEGRAM_BOT_TOKEN="):
+                            token_str = line.split("=", 1)[1].strip()
+                            from pydantic import SecretStr
+                            bot_token = SecretStr(token_str)
+                            logger.info("Loaded bot token from env.local file")
+                            break
+            except Exception as exc:
+                logger.debug("Failed to read bot token from env.local: %s", exc)
+    
+    logger.info("Checking bot token on startup (has_token: %s)", bool(bot_token))
+    
+    if not bot_token:
+        logger.debug("Skipping bot token restoration: token not provided")
+        return
+
+    logger.info("Restoring bot token from environment variables on startup...")
+    
+    async with AsyncSessionLocal() as session:
+        try:
+            bot_service = BotService(session)
+            # Получаем первого бота (обычно это бот с id=1)
+            from sqlalchemy import select
+            from .models.bot import Bot
+            result = await session.execute(select(Bot).limit(1))
+            bot = result.scalar_one_or_none()
+            
+            if bot:
+                token_value = bot_token.get_secret_value() if hasattr(bot_token, 'get_secret_value') else str(bot_token)
+                await bot_service.update_token(bot.id, token_value)
+                logger.info(
+                    "Bot token restored from environment variables (bot_id: %s, bot_name: %s)",
+                    bot.id,
+                    bot.name,
+                )
+            else:
+                logger.warning("No bot found in database, skipping token restoration")
+        except Exception as exc:
+            logger.error(
+                "Failed to restore bot token from environment: %s",
+                exc,
+                exc_info=True,
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
@@ -61,6 +195,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise
 
     await ensure_default_admin()
+    await ensure_yookassa_settings()
+    await ensure_bot_token()
 
     yield
 

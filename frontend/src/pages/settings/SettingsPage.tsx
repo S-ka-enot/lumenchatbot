@@ -38,7 +38,7 @@ const SettingsPage = () => {
     if (yooKassaSettings) {
       setYooKassaForm((prev) => ({ ...prev, shopId: yooKassaSettings.shop_id ?? '' }))
     }
-  }, [yooKassaSettings?.shop_id])
+  }, [yooKassaSettings])
 
   const handleYooKassaChange = (field: 'shopId' | 'apiKey') =>
     (event: React.ChangeEvent<HTMLInputElement>) => {

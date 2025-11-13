@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_db
-from backend.app.models.user import User
-from backend.app.schemas.bot import (
+from ....api.deps import get_db
+from ....models.user import User
+from ....schemas.bot import (
     BotUserRegisterRequest,
     BotUserUpdateRequest,
     ChannelPublic,
@@ -19,13 +19,13 @@ from backend.app.schemas.bot import (
     PaymentCreateResponse,
     SubscriptionStatusResponse,
 )
-from backend.app.schemas.user import UserRead
-from backend.app.services.channels import ChannelService
-from backend.app.services.payments import PaymentService
-from backend.app.services.promo_codes import PromoCodeService
-from backend.app.services.users import UserService
-from backend.app.services.notifications import send_admin_message
-from backend.app.services.subscription_plans import SubscriptionPlanService
+from ....schemas.user import UserRead
+from ....services.channels import ChannelService
+from ....services.payments import PaymentService
+from ....services.promo_codes import PromoCodeService
+from ....services.users import UserService
+from ....services.notifications import send_admin_message
+from ....services.subscription_plans import SubscriptionPlanService
 
 router = APIRouter()
 
@@ -229,7 +229,7 @@ async def bot_confirm_payment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     response = PaymentConfirmResponse(
         status=payment.status.value,
-        subscription_end=subscription.end_date if subscription else None,
+        subscription_end=subscription.expires_at if subscription else None,
     )
     await send_admin_message(
         f"Оплата #{payment_id} подтверждена. Статус: {response.status}"
@@ -264,9 +264,9 @@ async def bot_cancel_auto_renew(
         .where(
             Subscription.user_id == user.id,
             Subscription.is_active.is_(True),
-            Subscription.end_date >= now,
+            Subscription.expires_at >= now,
         )
-        .order_by(Subscription.end_date.desc())
+        .order_by(Subscription.expires_at.desc())
         .limit(1)
     )
     result = await session.execute(stmt)
@@ -293,6 +293,82 @@ async def bot_cancel_auto_renew(
     }
 
 
+@router.post(
+    "/users/{telegram_id}/subscription/cancel",
+    summary="Полная отмена подписки пользователем",
+)
+async def bot_cancel_subscription(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_db),
+    bot_id: int | None = Query(default=None),
+) -> dict[str, str | int]:
+    """Полностью отменяет подписку пользователя: деактивирует подписки и удаляет из каналов."""
+    from backend.app.models.subscription import Subscription
+    from backend.app.services.channel_access import ChannelAccessService
+    
+    user_service = UserService(session)
+    user = await user_service.get_by_telegram(telegram_id, bot_id=bot_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    
+    # Находим все активные подписки
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user.id,
+            Subscription.is_active.is_(True),
+            Subscription.expires_at >= now,
+        )
+    )
+    result = await session.execute(stmt)
+    subscriptions = result.scalars().all()
+    
+    if not subscriptions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Активные подписки не найдены",
+        )
+    
+    # Деактивируем все подписки
+    channel_ids = []
+    for subscription in subscriptions:
+        subscription.is_active = False
+        subscription.auto_renew = False
+        session.add(subscription)
+        if subscription.channel_id:
+            channel_ids.append(subscription.channel_id)
+    
+    # Обновляем статус пользователя
+    user.is_premium = False
+    user.subscription_end = None
+    session.add(user)
+    
+    # Удаляем пользователя из каналов
+    channel_service = ChannelAccessService(session)
+    remove_results = await channel_service.remove_user_from_channels(
+        user=user,
+        channel_ids=channel_ids if channel_ids else None,
+    )
+    
+    removed_count = sum(1 for r in remove_results if r.get("success"))
+    
+    await session.commit()
+    
+    await send_admin_message(
+        f"Пользователь {user.telegram_id} отменил подписку. Удален из {removed_count} каналов."
+    )
+    
+    return {
+        "status": "success",
+        "message": "Подписка отменена",
+        "channels_removed": removed_count,
+    }
+
+
 @router.get(
     "/subscriptions/expiring",
     summary="Получить пользователей с истекающими подписками",
@@ -314,8 +390,8 @@ async def bot_get_expiring_subscriptions(
         .join(Subscription, Subscription.user_id == User.id)
         .where(
             Subscription.is_active.is_(True),
-            Subscription.end_date >= now,
-            Subscription.end_date <= target_date,
+            Subscription.expires_at >= now,
+            Subscription.expires_at <= target_date,
             User.is_blocked.is_(False),
         )
     )
@@ -325,14 +401,14 @@ async def bot_get_expiring_subscriptions(
     result = await session.execute(stmt)
     users_data = []
     for user, subscription in result.all():
-        days_left = (subscription.end_date - now).days
+        days_left = (subscription.expires_at - now).days
         users_data.append({
             "telegram_id": user.telegram_id,
             "user_id": user.id,
             "bot_id": user.bot_id,
             "username": user.username,
             "first_name": user.first_name,
-            "subscription_end": subscription.end_date.isoformat(),
+            "subscription_end": subscription.expires_at.isoformat(),
             "days_left": days_left,
             "plan_id": subscription.plan_id,
         })
@@ -361,8 +437,8 @@ async def bot_get_expired_subscriptions(
         .join(Subscription, Subscription.user_id == User.id)
         .where(
             Subscription.is_active.is_(True),
-            Subscription.end_date < now,
-            Subscription.end_date >= cutoff_date,
+            Subscription.expires_at < now,
+            Subscription.expires_at >= cutoff_date,
             User.is_blocked.is_(False),
         )
     )
@@ -378,7 +454,7 @@ async def bot_get_expired_subscriptions(
             "bot_id": user.bot_id,
             "username": user.username,
             "first_name": user.first_name,
-            "subscription_end": subscription.end_date.isoformat(),
+            "subscription_end": subscription.expires_at.isoformat(),
             "plan_id": subscription.plan_id,
             "channels": [],  # Будет заполнено на фронтенде или в боте
         })

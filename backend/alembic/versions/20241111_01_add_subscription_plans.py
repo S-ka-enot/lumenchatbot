@@ -19,7 +19,7 @@ def _table_has_column(inspector, table_name: str, column_name: str) -> bool:
 
 # revision identifiers, used by Alembic.
 revision = "20241111_01_add_subscription_plans"
-down_revision = None
+down_revision = "20241110_01"
 branch_labels = None
 depends_on = None
 
@@ -105,5 +105,3 @@ def downgrade() -> None:
 
     if inspector.has_table("subscription_plans"):
         op.drop_table("subscription_plans")
-
-

@@ -6,6 +6,7 @@ from . import (
     channels,
     dashboard,
     health,
+    payment_return,
     payments,
     promo_codes,
     settings,

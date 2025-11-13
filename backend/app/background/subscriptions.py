@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 from ..db.session import AsyncSessionLocal
 from ..models.subscription import Subscription
 from ..models.user import User
+from ..services.channel_access import ChannelAccessService
 from ..services.user_notifications import UserNotificationService
 
 logger = logging.getLogger(__name__)
@@ -39,8 +40,8 @@ async def _check_expiring_subscriptions() -> None:
                 .options(joinedload(Subscription.user))
                 .where(
                     Subscription.is_active == True,  # noqa: E712
-                    Subscription.end_date >= start_date,
-                    Subscription.end_date <= end_date,
+                    Subscription.expires_at >= start_date,
+                    Subscription.expires_at <= end_date,
                 )
             )
             
@@ -54,7 +55,7 @@ async def _check_expiring_subscriptions() -> None:
                     continue
                 
                 # Вычисляем точное количество дней до истечения
-                actual_days_left = (subscription.end_date - now).days
+                actual_days_left = (subscription.expires_at - now).days
                 
                 # Проверяем, нужно ли отправить уведомление для этого количества дней
                 if actual_days_left not in reminder_days:
@@ -77,7 +78,7 @@ async def _check_expiring_subscriptions() -> None:
                         success = await notification_service.send_subscription_expiring_notification(
                             user=subscription.user,
                             days_left=actual_days_left,
-                            subscription_end=subscription.end_date,
+                            subscription_end=subscription.expires_at,
                         )
                         if success:
                             _sent_notifications[notification_key] = now
@@ -101,6 +102,64 @@ async def _check_expiring_subscriptions() -> None:
                         )
 
 
+async def _remove_users_without_subscriptions() -> None:
+    """Удаляет из каналов пользователей, у которых нет активных подписок."""
+    async with AsyncSessionLocal() as session:
+        now = datetime.now(timezone.utc)
+        
+        # Получаем всех пользователей, у которых нет активных подписок
+        # но они помечены как premium или имеют subscription_end в будущем
+        stmt = (
+            select(User)
+            .options(joinedload(User.subscriptions))
+            .where(
+                User.is_premium == True,  # noqa: E712
+            )
+        )
+        
+        result = await session.execute(stmt)
+        users = result.scalars().unique().all()
+        
+        channel_service = ChannelAccessService(session)
+        removed_count = 0
+        
+        for user in users:
+            # Проверяем, есть ли у пользователя активные подписки
+            active_subscriptions = [
+                sub for sub in user.subscriptions
+                if sub.is_active and sub.expires_at > now
+            ]
+            
+            # Если нет активных подписок, но пользователь помечен как premium
+            if not active_subscriptions:
+                # Обновляем статус пользователя
+                user.is_premium = False
+                user.subscription_end = None
+                session.add(user)
+                
+                # Удаляем пользователя из всех каналов, требующих подписку
+                remove_results = await channel_service.remove_user_from_channels(
+                    user=user,
+                    channel_ids=None,  # Удаляем из всех каналов
+                )
+                
+                success_count = sum(1 for r in remove_results if r.get("success"))
+                if success_count > 0:
+                    removed_count += 1
+                    logger.info(
+                        "Пользователь %s (telegram_id: %s) удален из %d каналов (нет активных подписок)",
+                        user.id,
+                        user.telegram_id,
+                        success_count,
+                    )
+        
+        if removed_count > 0:
+            await session.commit()
+            logger.info("Удалено %d пользователей без активных подписок из каналов", removed_count)
+        else:
+            logger.debug("Нет пользователей без активных подписок для удаления из каналов")
+
+
 async def _check_expired_subscriptions() -> None:
     """Проверяет истекшие подписки и отправляет уведомления."""
     async with AsyncSessionLocal() as session:
@@ -115,8 +174,8 @@ async def _check_expired_subscriptions() -> None:
             .options(joinedload(Subscription.user))
             .where(
                 Subscription.is_active == True,  # noqa: E712
-                Subscription.end_date < now,
-                Subscription.end_date >= expired_start,
+                Subscription.expires_at < now,
+                Subscription.expires_at >= expired_start,
             )
         )
         
@@ -148,6 +207,41 @@ async def _check_expired_subscriptions() -> None:
                     session.add(subscription)
                     if subscription.user:
                         session.add(subscription.user)
+                    
+                    # Удаляем пользователя из каналов, если у него нет других активных подписок
+                    if subscription.user:
+                        # Проверяем, есть ли у пользователя другие активные подписки
+                        other_active_stmt = (
+                            select(Subscription)
+                            .where(
+                                Subscription.user_id == subscription.user_id,
+                                Subscription.id != subscription.id,
+                                Subscription.is_active == True,  # noqa: E712
+                                Subscription.expires_at > now,
+                            )
+                        )
+                        other_active_result = await session.execute(other_active_stmt)
+                        other_active = other_active_result.scalars().all()
+                        
+                        # Если нет других активных подписок, удаляем пользователя из каналов
+                        if not other_active:
+                            channel_service = ChannelAccessService(session)
+                            # Получаем каналы, связанные с истекшей подпиской
+                            channel_ids = None
+                            if subscription.channel_id:
+                                channel_ids = [subscription.channel_id]
+                            
+                            remove_results = await channel_service.remove_user_from_channels(
+                                user=subscription.user,
+                                channel_ids=channel_ids,
+                            )
+                            
+                            removed_count = sum(1 for r in remove_results if r.get("success"))
+                            logger.info(
+                                "Пользователь %s удален из %d каналов после истечения подписки",
+                                subscription.user_id,
+                                removed_count,
+                            )
                     
                     success = await notification_service.send_subscription_expired_notification(
                         user=subscription.user,
@@ -196,6 +290,18 @@ def setup_subscription_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="interval",
         hours=1,
         id="check_expired_subscriptions",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+    )
+    
+    # Проверяем и удаляем пользователей без активных подписок из каналов каждый день в 3:00
+    scheduler.add_job(
+        _remove_users_without_subscriptions,
+        trigger="cron",
+        hour=3,
+        minute=0,
+        id="remove_users_without_subscriptions",
         max_instances=1,
         coalesce=True,
         replace_existing=True,

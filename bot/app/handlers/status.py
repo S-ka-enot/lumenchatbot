@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import httpx
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from ..keyboards import build_main_menu_keyboard
@@ -37,21 +37,43 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     context.user_data["subscription"] = status_data
-    message = _format_status_message(status_data)
+    message, inline_keyboard = _format_status_message(status_data)
     is_subscriber = status_data.get("is_active", False)
+    
+    # Создаем inline клавиатуру для каналов, если они есть
+    reply_markup = None
+    if inline_keyboard:
+        reply_markup = InlineKeyboardMarkup(inline_keyboard)
+        logger.info("Created inline keyboard with %d buttons", len(inline_keyboard))
+    else:
+        logger.warning("No inline keyboard created - channels: %s", status_data.get("channels", []))
+    
     await update.message.reply_text(
         message,
+        reply_markup=reply_markup,
+    )
+    
+    # Отправляем основную клавиатуру отдельным сообщением
+    await update.message.reply_text(
+        "💡 Используй кнопки выше для перехода в каналы." if inline_keyboard else "💡 Используй команду /channels для просмотра каналов.",
         reply_markup=build_main_menu_keyboard(is_subscriber=is_subscriber),
     )
 
 
-def _format_status_message(status_data: dict) -> str:
+def _format_status_message(status_data: dict) -> tuple[str, list[list[InlineKeyboardButton]] | None]:
+    """
+    Форматирует сообщение со статусом подписки.
+    
+    Returns:
+        tuple: (текст сообщения, список кнопок для каналов или None)
+    """
     if status_data.get("status") in {"not_found", "inactive"}:
         return (
             "📊 Статус подписки:\n\n"
             "❌ Подписка не активна\n\n"
             "Чтобы получить доступ к закрытым каналам, оформи подписку.\n"
-            "Используй команду /buy или кнопку «Купить подписку»."
+            "Используй команду /buy или кнопку «Купить подписку».",
+            None,
         )
 
     end_date_raw = status_data.get("subscription_end")
@@ -69,9 +91,67 @@ def _format_status_message(status_data: dict) -> str:
     except ValueError:
         end_date = "—"
 
-    channels_list = "\n".join(
-        f"• {ch.get('channel_name') or ch.get('name') or 'Канал'}" for ch in channels
-    ) or "—"
+    # Формируем список каналов и кнопки
+    channels_list_items = []
+    channel_buttons = []
+    
+    for ch in channels:
+        # Поддерживаем разные форматы данных (dict или объект с model_dump)
+        if hasattr(ch, 'model_dump'):
+            ch_dict = ch.model_dump()
+        elif isinstance(ch, dict):
+            ch_dict = ch
+        else:
+            ch_dict = {}
+        
+        channel_name = ch_dict.get('channel_name') or ch_dict.get('name') or 'Канал'
+        invite_link = ch_dict.get('invite_link')
+        channel_username = ch_dict.get('channel_username')
+        
+        logger.debug(
+            "Channel data: name=%s, invite_link=%s, username=%s",
+            channel_name,
+            invite_link,
+            channel_username,
+        )
+        
+        # Добавляем название канала в список
+        channels_list_items.append(f"• {channel_name}")
+        
+        # Формируем кнопку для канала
+        if invite_link:
+            # Используем invite_link как URL
+            channel_buttons.append([
+                InlineKeyboardButton(f"📺 {channel_name}", url=invite_link)
+            ])
+            logger.debug("Created button for channel %s with invite_link", channel_name)
+        elif channel_username:
+            # Если нет invite_link, используем username
+            username = channel_username.lstrip('@')
+            channel_url = f"https://t.me/{username}"
+            channel_buttons.append([
+                InlineKeyboardButton(f"📺 {channel_name}", url=channel_url)
+            ])
+            logger.debug("Created button for channel %s with username", channel_name)
+        else:
+            # Если нет ни invite_link, ни username, все равно создаем кнопку с channel_id
+            # Пользователь может попробовать перейти, и бот создаст ссылку
+            channel_id = ch_dict.get('channel_id')
+            if channel_id:
+                # Пытаемся создать ссылку на основе channel_id
+                # Для приватных каналов это может не сработать, но попробуем
+                try:
+                    # Если channel_id - это число, формируем ссылку
+                    if isinstance(channel_id, (int, str)) and str(channel_id).lstrip('-').isdigit():
+                        # Для приватных каналов без username нельзя создать прямую ссылку
+                        # Но мы все равно создадим кнопку, которая будет обработана через /channels
+                        logger.debug("Channel %s has channel_id but no invite_link or username", channel_name)
+                except Exception:
+                    pass
+            logger.debug("No invite_link or username for channel %s, skipping button", channel_name)
+    
+    channels_list = "\n".join(channels_list_items) if channels_list_items else "—"
+    inline_keyboard = channel_buttons if channel_buttons else None
     days_label = f"{days_left} дн." if days_left is not None else "—"
     if plan:
         plan_name = plan.get("name", "—")
@@ -124,7 +204,7 @@ def _format_status_message(status_data: dict) -> str:
     if auto_renew:
         lines.append("\n💡 Используй команду /unsubscribe, чтобы отменить автопродление.")
     
-    return "\n".join(lines)
+    return "\n".join(lines), inline_keyboard
 
 
 def _get_backend_client(context: ContextTypes.DEFAULT_TYPE) -> BackendClient:

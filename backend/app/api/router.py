@@ -8,6 +8,7 @@ from .v1.endpoints import (
     channels,
     dashboard,
     health,
+    payment_return,
     payments,
     promo_codes,
     settings,
@@ -21,6 +22,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(subscribers.router, prefix="/subscribers", tags=["Subscribers"])
 api_router.include_router(payments.router, prefix="/payments", tags=["Payments"])
+api_router.include_router(payment_return.router, tags=["Payment Return"])
 api_router.include_router(subscription_plans.router, prefix="/plans", tags=["Plans"])
 api_router.include_router(promo_codes.router, prefix="/promo-codes", tags=["PromoCodes"])
 api_router.include_router(bots.router, prefix="/bots", tags=["Bots"])

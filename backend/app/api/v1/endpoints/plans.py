@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.subscription_plan import (
+from ....api.deps import get_current_admin, get_db
+from ....schemas.auth import MeResponse
+from ....schemas.subscription_plan import (
     SubscriptionPlanCreate,
     SubscriptionPlanRead,
     SubscriptionPlanUpdate,
 )
-from backend.app.services.subscription_plans import SubscriptionPlanService
+from ....services.subscription_plans import SubscriptionPlanService
 
 router = APIRouter()
 

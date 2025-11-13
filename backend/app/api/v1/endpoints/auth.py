@@ -2,12 +2,12 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from backend.app.api.deps import get_admin_service, get_current_admin
-from backend.app.core.config import settings
-from backend.app.core.rate_limit import limiter
-from backend.app.core.security import create_access_token
-from backend.app.schemas import LoginRequest, MeResponse, Token
-from backend.app.services.admins import AdminService
+from ....api.deps import get_admin_service, get_current_admin
+from ....core.config import settings
+from ....core.rate_limit import limiter
+from ....core.security import create_access_token
+from ....schemas import LoginRequest, MeResponse, Token
+from ....services.admins import AdminService
 
 router = APIRouter()
 

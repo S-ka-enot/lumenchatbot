@@ -25,6 +25,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message is None or user is None:
         return ConversationHandler.END
 
+    # Проверяем, есть ли параметры в команде /start (deep link)
+    command_args = update.message.text.split(" ", 1) if update.message.text else []
+    if len(command_args) > 1:
+        start_param = command_args[1]
+        
+        # Обработка возврата после оплаты
+        if start_param.startswith("payment_"):
+            payment_id_str = start_param.replace("payment_", "").replace("payment_return", "")
+            if payment_id_str:
+                try:
+                    payment_id = int(payment_id_str)
+                    backend_client = _get_backend_client(context)
+                    try:
+                        # Получаем статус подписки для обновления информации
+                        status_data = await backend_client.get_subscription_status(
+                            telegram_id=user.id,
+                        )
+                        context.user_data["subscription"] = status_data
+                        is_subscriber = status_data.get("is_active", False)
+                        
+                        if is_subscriber:
+                            await update.message.reply_text(
+                                "✅ Оплата успешно обработана!\n\n"
+                                "Твоя подписка активирована. Теперь у тебя есть доступ ко всем закрытым каналам.",
+                                reply_markup=build_main_menu_keyboard(is_subscriber=True),
+                            )
+                        else:
+                            await update.message.reply_text(
+                                "✅ Оплата получена!\n\n"
+                                "Подписка обрабатывается. Если доступ не появился в течение нескольких минут, "
+                                "свяжись с поддержкой.",
+                                reply_markup=build_main_menu_keyboard(is_subscriber=False),
+                            )
+                    except httpx.RequestError:
+                        await update.message.reply_text(
+                            "✅ Оплата получена!\n\n"
+                            "Подписка обрабатывается. Если доступ не появился в течение нескольких минут, "
+                            "свяжись с поддержкой.",
+                            reply_markup=build_main_menu_keyboard(is_subscriber=False),
+                        )
+                    return ConversationHandler.END
+                except ValueError:
+                    pass
+            else:
+                # Просто возврат после оплаты без payment_id
+                await update.message.reply_text(
+                    "✅ Спасибо за оплату!\n\n"
+                    "Подписка обрабатывается. Если доступ не появился в течение нескольких минут, "
+                    "свяжись с поддержкой.",
+                    reply_markup=build_main_menu_keyboard(is_subscriber=False),
+                )
+                return ConversationHandler.END
+
     greeting = (
         "👋 Привет! Я помогу оформить подписку на закрытые каналы.\n\n"
         "Чтобы продолжить, поделись, пожалуйста, своим номером телефона."

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 PLAN_CALLBACK_PREFIX = "plan:"
 PROMO_INPUT_PREFIX = "promo_input:"
 PROMO_APPLY_PREFIX = "promo_apply:"
+PAY_WITHOUT_PROMO_PREFIX = "pay_no_promo:"
 
 
 async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -201,7 +202,7 @@ async def _show_plan_with_promo_option(update: Update, context: ContextTypes.DEF
                     [
                         InlineKeyboardButton(
                             "❌ Без промокода",
-                            callback_data=f"{PLAN_CALLBACK_PREFIX}{plan['id']}",
+                            callback_data=f"{PAY_WITHOUT_PROMO_PREFIX}{plan['id']}",
                         )
                     ],
                 ]
@@ -245,7 +246,7 @@ async def _show_plan_with_promo_option(update: Update, context: ContextTypes.DEF
         [
             InlineKeyboardButton(
                 "💳 Оформить без промокода",
-                callback_data=f"{PLAN_CALLBACK_PREFIX}{plan['id']}",
+                callback_data=f"{PAY_WITHOUT_PROMO_PREFIX}{plan['id']}",
             )
         ],
     ]
@@ -312,6 +313,48 @@ async def handle_promo_apply_callback(update: Update, context: ContextTypes.DEFA
             "Попробуй ещё раз команду /buy."
         )
         return
+    
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    
+    await _start_plan_payment(update, context, plan)
+
+
+async def handle_pay_without_promo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик нажатия на кнопку оформления без промокода."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    
+    plan_id = query.data.replace(PAY_WITHOUT_PROMO_PREFIX, "", 1)
+    available_plans = context.user_data.get("available_plans", {})
+    plan = available_plans.get(plan_id)
+    
+    backend_client = _get_backend_client(context)
+    user_profile = context.user_data.get("user_profile") or {}
+    
+    if plan is None:
+        try:
+            plans = await backend_client.list_plans(bot_id=user_profile.get("bot_id"))
+        except httpx.HTTPError:
+            plans = []
+        for candidate in plans:
+            if str(candidate["id"]) == plan_id:
+                plan = candidate
+                break
+    
+    if plan is None:
+        await query.message.reply_text(
+            "😔 Не удалось найти выбранный тариф.\n\n"
+            "Попробуй ещё раз команду /buy."
+        )
+        return
+    
+    # Очищаем промокод из контекста, так как оформляем без него
+    context.user_data.pop("promo_code", None)
     
     try:
         await query.edit_message_reply_markup(reply_markup=None)

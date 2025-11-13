@@ -3,14 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.promo_code import (
+from ....api.deps import get_current_admin, get_db
+from ....schemas.auth import MeResponse
+from ....schemas.promo_code import (
     PromoCodeCreate,
     PromoCodeRead,
     PromoCodeUpdate,
 )
-from backend.app.services.promo_codes import PromoCodeService
+from ....services.promo_codes import PromoCodeService
 
 router = APIRouter()
 

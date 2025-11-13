@@ -62,9 +62,10 @@ class PaymentProviderSettingsService:
         record = await self._get_by_provider(PaymentProvider.YOOKASSA)
         if record is None:
             record = PaymentProviderCredential(
+                bot_id=None,  # Глобальные настройки для всех ботов
                 provider=PaymentProvider.YOOKASSA,
                 shop_id=shop_id,
-                api_key_encrypted=encrypt_secret(api_key),
+                api_key_encrypted=encrypt_secret(api_key) if api_key else None,
             )
         else:
             record.shop_id = shop_id

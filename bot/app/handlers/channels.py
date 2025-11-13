@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 import httpx
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -90,6 +90,8 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     channels = normalized_channels
 
     lines: list[str] = []
+    channel_buttons: list[list[InlineKeyboardButton]] = []
+    
     for channel in channels:
         name = channel.get("channel_name") or channel.get("name") or "Канал"
         description = channel.get("description") or ""
@@ -105,6 +107,8 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         lines.append(f"{locked_emoji} {name}{status_text}")
         if description:
             lines.append(f"   📝 {description}")
+        
+        # Формируем кнопку для канала, если доступ разрешен
         link = None
         if is_subscriber or not requires_subscription:
             link = await _resolve_channel_link(
@@ -112,8 +116,11 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 channel,
                 allow_private=is_subscriber,
             )
-        if link:
-            lines.append(f"   🔗 {link}")
+            if link:
+                channel_buttons.append([
+                    InlineKeyboardButton(f"📺 {name}", url=link)
+                ])
+        
         lines.append("")  # Пустая строка между каналами
 
     header = "📚 Список каналов:\n"
@@ -121,10 +128,24 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         header += "\n💡 Чтобы получить доступ к закрытым каналам, оформи подписку командой /buy\n"
 
     message = header + "\n".join(lines)
-    await update.message.reply_text(
-        message,
-        reply_markup=build_main_menu_keyboard(is_subscriber=is_subscriber),
-    )
+    
+    # Если есть inline кнопки, отправляем сообщение с ними, затем основную клавиатуру отдельно
+    if channel_buttons:
+        reply_markup = InlineKeyboardMarkup(channel_buttons)
+        await update.message.reply_text(
+            message,
+            reply_markup=reply_markup,
+        )
+        await update.message.reply_text(
+            "💡 Используй кнопки выше для перехода в каналы.",
+            reply_markup=build_main_menu_keyboard(is_subscriber=is_subscriber),
+        )
+    else:
+        # Если нет кнопок, отправляем сообщение с основной клавиатурой
+        await update.message.reply_text(
+            message,
+            reply_markup=build_main_menu_keyboard(is_subscriber=is_subscriber),
+        )
 
 
 def _get_backend_client(context: ContextTypes.DEFAULT_TYPE) -> BackendClient:

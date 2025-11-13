@@ -72,8 +72,8 @@ class PaymentService:
                 "amount": str(payment.amount),
                 "amount_formatted": self.format_amount(payment.amount, payment.currency),
                 "currency": payment.currency,
-                "status": payment.status.value,
-                "status_label": self._get_status_label(payment.status),
+                "status": payment.status if isinstance(payment.status, str) else payment.status.value,
+                "status_label": self._get_status_label(payment.status if isinstance(payment.status, str) else payment.status.value),
                 "created_at": payment.created_at.isoformat() if payment.created_at else None,
                 "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
                 "description": payment.description,
@@ -81,13 +81,13 @@ class PaymentService:
                 "payment_provider": payment.payment_provider.value,
                 "external_id": payment.external_id,
                 "has_subscription": payment.subscription is not None,
-                "subscription_end": payment.subscription.end_date.isoformat() if payment.subscription else None,
+                "subscription_end": payment.subscription.expires_at.isoformat() if payment.subscription else None,
             }
             for payment in payments
         ]
 
     @staticmethod
-    def _get_status_label(status: PaymentStatus) -> str:
+    def _get_status_label(status: PaymentStatus | str) -> str:
         """Возвращает читаемый статус платежа."""
         labels = {
             PaymentStatus.PENDING: "Ожидает оплаты",
@@ -95,6 +95,12 @@ class PaymentService:
             PaymentStatus.FAILED: "Ошибка оплаты",
             PaymentStatus.CANCELED: "Отменён",
         }
+        if isinstance(status, str):
+            try:
+                status_enum = PaymentStatus(status)
+                return labels.get(status_enum, status)
+            except ValueError:
+                return status
         return labels.get(status, status.value)
 
     def _to_list_item(self, payment: Payment) -> PaymentListItem:
@@ -106,7 +112,7 @@ class PaymentService:
         if not member_name and payment.user:
             member_name = f"#{payment.user.telegram_id}"
 
-        status = payment.status.value
+        status = payment.status if isinstance(payment.status, str) else payment.status.value
         amount_label = f"{payment.amount:,.2f} {payment.currency}".replace(",", " ")
 
         created_at_dt = payment.created_at
@@ -199,11 +205,15 @@ class PaymentService:
         try:
             provider_service = PaymentProviderSettingsService(self.session)
             shop_id, api_key = await provider_service.get_yookassa_credentials()
-            client = YooKassaClient(shop_id=shop_id, api_key=api_key)
             
-            # Проверяем наличие return_url
-            if client.return_url is None:
-                raise ValueError("YOOKASSA_RETURN_URL не настроен в конфигурации")
+            # Используем return_url из настроек или из конфигурации
+            from ..core.config import settings
+            # Формируем return_url с payment_id для возврата в бота
+            base_url = str(settings.yookassa_return_url) if settings.yookassa_return_url else "http://localhost:8000"
+            return_url = f"{base_url}/api/v1/payments/return?payment_id={payment.id}"
+            logger.info(f"Using YooKassa return_url: {return_url}")
+            
+            client = YooKassaClient(shop_id=shop_id, api_key=api_key, return_url=return_url)
             
             metadata = {
                 "payment_id": payment.id,
@@ -229,9 +239,12 @@ class PaymentService:
             self.session.add(payment)
             await self.session.commit()
             await self.session.refresh(payment)
-        except RuntimeError:
+            logger.info(f"YooKassa payment created: {payment.external_id}, URL: {payment_url}")
+        except RuntimeError as exc:
+            logger.warning(f"YooKassa не настроена или ошибка получения credentials: {exc}")
             payment_url = None
-        except Exception:
+        except Exception as exc:
+            logger.exception(f"Ошибка при создании платежа YooKassa: {exc}")
             await self.session.rollback()
             raise
 
@@ -341,7 +354,7 @@ class PaymentService:
                     notification_service = UserNotificationService(self.session)
                     amount_formatted = self.format_amount(payment.amount, payment.currency)
                     plan_name = payment.plan.name if payment.plan else None
-                    subscription_end = subscription.end_date if subscription else None
+                    subscription_end = subscription.expires_at if subscription else None
                     await notification_service.send_payment_success_notification(
                         user=payment.user,
                         payment_id=payment.id,
@@ -420,7 +433,7 @@ class PaymentService:
                     "amount": f"{payment.amount:.2f}",
                     "currency": payment.currency,
                     "amount_formatted": self.format_amount(payment.amount, payment.currency),
-                    "status": payment.status.value,
+                    "status": payment.status if isinstance(payment.status, str) else payment.status.value,
                     "provider": payment.payment_provider.value,
                     "plan": plan_name,
                     "external_id": payment.external_id or "",
@@ -540,13 +553,15 @@ class PaymentService:
                         from .user_notifications import UserNotificationService
                         notification_service = UserNotificationService(self.session)
                         plan_name = payment.plan.name if payment.plan else None
-                        subscription_end = subscription.end_date if subscription else None
+                        subscription_end = subscription.expires_at if subscription else None
+                        plan_id = payment.plan.id if payment.plan else None
                         await notification_service.send_payment_success_notification(
                             user=payment.user,
                             payment_id=payment.id,
                             amount=amount_formatted,
                             plan_name=plan_name,
                             subscription_end=subscription_end,
+                            plan_id=plan_id,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -564,18 +579,18 @@ class PaymentService:
 
     async def sync_pending_yookassa_payments(self, limit: int = 20) -> None:
         # Получаем список ID платежей без блокировки (для производительности)
-        stmt = (
-            select(Payment.id)
-            .where(
-                Payment.payment_provider == PaymentProvider.YOOKASSA,
-                Payment.status == PaymentStatus.PENDING,
-                Payment.external_id.is_not(None),
-            )
-            .order_by(Payment.created_at.asc())
-            .limit(limit)
-        )
-        result = await self.session.execute(stmt)
-        payment_ids = result.scalars().all()
+        # Используем raw SQL для обхода проблемы с payment_provider
+        from sqlalchemy import text
+        stmt = text("""
+            SELECT id FROM payments 
+            WHERE (payment_provider = 'yookassa' OR payment_provider = 'YOOKASSA' OR external_id IS NOT NULL)
+              AND status = 'pending'
+              AND external_id IS NOT NULL
+            ORDER BY created_at ASC
+            LIMIT :limit
+        """)
+        result = await self.session.execute(stmt, {"limit": limit})
+        payment_ids = [row[0] for row in result.fetchall()]
         if not payment_ids:
             return
 
@@ -643,13 +658,15 @@ class PaymentService:
                             notification_service = UserNotificationService(self.session)
                             amount_formatted = self.format_amount(payment.amount, payment.currency)
                             plan_name = payment.plan.name if payment.plan else None
-                            subscription_end = payment.subscription.end_date if payment.subscription else None
+                            subscription_end = payment.subscription.expires_at if payment.subscription else None
+                            plan_id = payment.plan.id if payment.plan else None
                             await notification_service.send_payment_success_notification(
                                 user=payment.user,
                                 payment_id=payment.id,
                                 amount=amount_formatted,
                                 plan_name=plan_name,
                                 subscription_end=subscription_end,
+                                plan_id=plan_id,
                             )
                         except Exception as exc:
                             logger.warning(
@@ -798,20 +815,97 @@ class PaymentService:
             duration_days = duration_override or 30
         end_point = start_point + timedelta(days=duration_days)
 
-        subscription = Subscription(
-            bot_id=locked_user.bot_id,
-            user_id=locked_user.id,
-            payment_id=payment.id,
-            start_date=start_point,
-            end_date=end_point,
-            is_active=True,
-            auto_renew=False,
-            plan_id=plan.id if plan else None,
-        )
-        self.session.add(subscription)
+        # Получаем каналы для плана
+        from sqlalchemy.orm import selectinload
+        from ..models.channel import Channel
+        from ..models.subscription_plan import SubscriptionPlan
+        
+        channels = []
+        if plan:
+            # Загружаем план с каналами
+            plan_stmt = (
+                select(SubscriptionPlan)
+                .options(selectinload(SubscriptionPlan.channels))
+                .where(SubscriptionPlan.id == plan.id)
+            )
+            plan_result = await self.session.execute(plan_stmt)
+            plan_with_channels = plan_result.scalar_one_or_none()
+            if plan_with_channels and plan_with_channels.channels:
+                channels = plan_with_channels.channels
+            else:
+                # Если у плана нет каналов, получаем все активные каналы для бота, требующие подписку
+                channels_stmt = (
+                    select(Channel)
+                    .where(Channel.bot_id == locked_user.bot_id, Channel.is_active.is_(True))
+                    .where(Channel.requires_subscription.is_(True))
+                )
+                channels_result = await self.session.execute(channels_stmt)
+                channels = channels_result.scalars().all()
+        
+        if not channels:
+            logger.warning(
+                "No channels found for plan %s, creating subscription without channel",
+                plan.id if plan else None,
+            )
+            # Создаем подписку без канала (для совместимости со старой схемой)
+            # Но это не должно происходить в нормальной работе
+            subscription = Subscription(
+                bot_id=locked_user.bot_id,
+                user_id=locked_user.id,
+                channel_id=1,  # Временное значение, нужно исправить схему
+                payment_id=payment.id,
+                started_at=start_point,
+                expires_at=end_point,
+                is_active=True,
+                auto_renew=False,
+                plan_id=plan.id if plan else None,
+            )
+            self.session.add(subscription)
+        else:
+            # Создаем подписки для всех каналов плана
+            subscriptions = []
+            for channel in channels:
+                # Проверяем, нет ли уже подписки на этот канал
+                existing_stmt = (
+                    select(Subscription)
+                    .where(
+                        Subscription.user_id == locked_user.id,
+                        Subscription.channel_id == channel.id,
+                        Subscription.is_active.is_(True),
+                    )
+                )
+                existing_result = await self.session.execute(existing_stmt)
+                existing = existing_result.scalar_one_or_none()
+                
+                if existing:
+                    # Обновляем существующую подписку
+                    existing.expires_at = end_point
+                    existing.payment_id = payment.id
+                    existing.plan_id = plan.id if plan else None
+                    subscriptions.append(existing)
+                else:
+                    # Создаем новую подписку
+                    subscription = Subscription(
+                        bot_id=locked_user.bot_id,
+                        user_id=locked_user.id,
+                        channel_id=channel.id,
+                        payment_id=payment.id,
+                        started_at=start_point,
+                        expires_at=end_point,
+                        is_active=True,
+                        auto_renew=False,
+                        plan_id=plan.id if plan else None,
+                    )
+                    self.session.add(subscription)
+                    subscriptions.append(subscription)
+            
+            # Используем первую подписку как основную для связи с payment
+            subscription = subscriptions[0] if subscriptions else None
+        
         locked_user.subscription_end = end_point
         locked_user.is_premium = True
         self.session.add(locked_user)
-        payment.subscription = subscription
+        if subscription:
+            payment.subscription = subscription
         return subscription
 

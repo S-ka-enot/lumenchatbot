@@ -21,16 +21,29 @@ class Subscription(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"), nullable=False)
     payment_id: Mapped[int | None] = mapped_column(
         ForeignKey("payments.id", ondelete="SET NULL"), nullable=True
     )
     plan_id: Mapped[int | None] = mapped_column(
         ForeignKey("subscription_plans.id", ondelete="SET NULL"), nullable=True
     )
-    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Используем имена полей из схемы БД
+    started_at: Mapped[datetime] = mapped_column("started_at", DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column("expires_at", DateTime(timezone=True), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auto_renew: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # Алиасы для обратной совместимости (только для чтения, не сохраняются в БД)
+    @property
+    def start_date(self) -> datetime:
+        """Алиас для start_date, возвращает started_at."""
+        return self.started_at
+    
+    @property
+    def end_date(self) -> datetime:
+        """Алиас для end_date, возвращает expires_at."""
+        return self.expires_at
 
     bot: Mapped["Bot"] = relationship(back_populates="subscriptions")
     user: Mapped["User"] = relationship(back_populates="subscriptions")

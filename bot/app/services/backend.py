@@ -96,6 +96,20 @@ class BackendClient:
         response.raise_for_status()
         return response.json()
 
+    async def cancel_subscription(
+        self, telegram_id: int, bot_id: int | None = None
+    ) -> dict[str, Any]:
+        """Полностью отменяет подписку пользователя: деактивирует подписки и удаляет из каналов."""
+        params: dict[str, Any] = {}
+        if bot_id is not None:
+            params["bot_id"] = bot_id
+        response = await self._client.post(
+            f"/bot/users/{telegram_id}/subscription/cancel",
+            params=params or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_expiring_subscriptions(
         self, bot_id: int | None = None, days_ahead: int = 3
     ) -> list[dict[str, Any]]:

@@ -42,7 +42,7 @@ class AnalyticsService:
         renewals_today = await self._scalar(
             select(func.count())
             .select_from(Subscription)
-            .where(Subscription.start_date >= datetime(now.year, now.month, now.day, tzinfo=timezone.utc))
+            .where(Subscription.started_at >= datetime(now.year, now.month, now.day, tzinfo=timezone.utc))
         )
 
         recent_payments = await self.session.execute(

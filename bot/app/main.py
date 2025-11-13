@@ -22,10 +22,15 @@ from .handlers import (
     cancel_command,
     cancel_registration,
     channels_command,
+    handle_pay_without_promo_callback,
     handle_plan_selection,
     handle_promo_apply_callback,
     handle_promo_code_input,
     handle_promo_input_callback,
+    handle_cancel_auto_renew_callback,
+    handle_cancel_cancel_subscription_callback,
+    handle_cancel_subscription_full_callback,
+    handle_confirm_cancel_subscription_callback,
     help_command,
     payments_command,
     promo_command,
@@ -93,6 +98,11 @@ def build_application(bot_token: str) -> Application:
     application.add_handler(CallbackQueryHandler(handle_plan_selection, pattern="^plan:"))
     application.add_handler(CallbackQueryHandler(handle_promo_input_callback, pattern="^promo_input:"))
     application.add_handler(CallbackQueryHandler(handle_promo_apply_callback, pattern="^promo_apply:"))
+    application.add_handler(CallbackQueryHandler(handle_pay_without_promo_callback, pattern="^pay_no_promo:"))
+    application.add_handler(CallbackQueryHandler(handle_cancel_auto_renew_callback, pattern="^cancel_auto_renew$"))
+    application.add_handler(CallbackQueryHandler(handle_cancel_subscription_full_callback, pattern="^cancel_subscription_full$"))
+    application.add_handler(CallbackQueryHandler(handle_confirm_cancel_subscription_callback, pattern="^confirm_cancel_subscription$"))
+    application.add_handler(CallbackQueryHandler(handle_cancel_cancel_subscription_callback, pattern="^cancel_cancel_subscription$"))
     
     # Обработка ввода промокода (текст без команд, только если ожидается ввод)
     application.add_handler(
@@ -104,6 +114,7 @@ def build_application(bot_token: str) -> Application:
 
     application.add_handler(MessageHandler(filters.Regex("^Помощь$"), help_command))
     application.add_handler(MessageHandler(filters.Regex("^Мои каналы$"), channels_command))
+    application.add_handler(MessageHandler(filters.Regex("^📚 Каналы$"), channels_command))
     application.add_handler(MessageHandler(filters.Regex("^Купить подписку$"), buy_command))
     application.add_handler(MessageHandler(filters.Regex("^Продлить подписку$"), buy_command))
     application.add_handler(MessageHandler(filters.Regex("^История платежей$"), payments_command))

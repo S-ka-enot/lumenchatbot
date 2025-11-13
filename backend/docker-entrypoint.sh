@@ -7,3 +7,5 @@ if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
 fi
 
 exec "$@"
+
+

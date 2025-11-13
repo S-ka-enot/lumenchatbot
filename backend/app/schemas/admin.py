@@ -58,6 +58,20 @@ class BotTokenUpdate(BaseModel):
     token: str = Field(..., min_length=10, description="Новый токен телеграм бота")
 
 
+class BotCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Название бота")
+    slug: str = Field(..., min_length=1, max_length=255, description="Уникальный идентификатор бота")
+    timezone: str = Field(default="Europe/Moscow", max_length=64, description="Часовой пояс")
+    is_active: bool = Field(default=True, description="Активен ли бот")
+
+
+class BotUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255, description="Название бота")
+    slug: str | None = Field(default=None, min_length=1, max_length=255, description="Уникальный идентификатор бота")
+    timezone: str | None = Field(default=None, max_length=64, description="Часовой пояс")
+    is_active: bool | None = Field(default=None, description="Активен ли бот")
+
+
 class SubscriberListItem(BaseModel):
     id: int
     bot_id: int

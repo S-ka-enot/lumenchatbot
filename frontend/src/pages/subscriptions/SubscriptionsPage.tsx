@@ -64,6 +64,7 @@ const SubscriptionsPage = () => {
     }
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { bot_id, ...planUpdatePayload } = basePayload
       if (modalMode === 'create') {
         await createPlan.mutateAsync(basePayload)

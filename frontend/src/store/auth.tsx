@@ -136,6 +136,7 @@ const mapAuthUser = (payload: MeResponse): AuthUser => ({
   lastLoginAt: payload.last_login_at ?? null,
 })
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuthContext = () => {
   const context = useContext(AuthContext)
   if (!context) {

@@ -3,10 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.settings import YooKassaSettingsResponse, YooKassaSettingsUpdate
-from backend.app.services.payment_providers import PaymentProviderSettingsService
+from ....api.deps import get_current_admin, get_db
+from ....schemas.auth import MeResponse
+from ....schemas.settings import YooKassaSettingsResponse, YooKassaSettingsUpdate
+from ....services.payment_providers import PaymentProviderSettingsService
 
 router = APIRouter()
 

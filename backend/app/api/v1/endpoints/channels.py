@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.base import PaginatedResponse
-from backend.app.schemas.channel import ChannelCreate, ChannelRead, ChannelUpdate
-from backend.app.services.channels import ChannelService
+from ....api.deps import get_current_admin, get_db
+from ....schemas.auth import MeResponse
+from ....schemas.base import PaginatedResponse
+from ....schemas.channel import ChannelCreate, ChannelRead, ChannelUpdate
+from ....services.channels import ChannelService
 
 router = APIRouter()
 

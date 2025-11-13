@@ -3,11 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_admin, get_db
-from backend.app.schemas.auth import MeResponse
-from backend.app.schemas.base import PaginatedResponse
-from backend.app.schemas.broadcast import BroadcastCreate, BroadcastRead, BroadcastUpdate
-from backend.app.services.broadcasts import BroadcastService
+from ....api.deps import get_current_admin, get_db
+from ....schemas.auth import MeResponse
+from ....schemas.base import PaginatedResponse
+from ....schemas.broadcast import BroadcastCreate, BroadcastRead, BroadcastUpdate
+from ....services.broadcasts import BroadcastService
 
 router = APIRouter()
 
@@ -152,9 +152,14 @@ async def send_broadcast_now(
     _: MeResponse = Depends(get_current_admin),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     service = BroadcastService(session)
     try:
+        logger.info(f"Попытка отправить рассылку {broadcast_id}")
         result = await service.send_broadcast_now(broadcast_id)
+        logger.info(f"Рассылка {broadcast_id} успешно отправлена: {result}")
         return result
     except ValueError as exc:
         exc_lower = str(exc).lower()
@@ -163,5 +168,12 @@ async def send_broadcast_now(
             if "не найден" in exc_lower or "не найдена" in exc_lower
             else status.HTTP_400_BAD_REQUEST
         )
+        logger.error(f"Ошибка при отправке рассылки {broadcast_id}: {exc}")
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Неожиданная ошибка при отправке рассылки {broadcast_id}: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Внутренняя ошибка сервера: {str(exc)}"
+        ) from exc
 

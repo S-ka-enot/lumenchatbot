@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Enum, String
+from sqlalchemy import Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, TimestampMixin
@@ -11,6 +11,7 @@ class PaymentProviderCredential(TimestampMixin, Base):
     __tablename__ = "payment_provider_credentials"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int | None] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), nullable=True)
     provider: Mapped[PaymentProvider] = mapped_column(
         Enum(PaymentProvider), nullable=False, unique=True
     )

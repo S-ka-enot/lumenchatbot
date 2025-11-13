@@ -27,6 +27,7 @@ class UserNotificationService:
         text: str,
         bot_id: int | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict | None = None,
     ) -> bool:
         """
         Отправляет сообщение пользователю через Telegram Bot API.
@@ -72,6 +73,8 @@ class UserNotificationService:
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
@@ -120,8 +123,9 @@ class UserNotificationService:
         amount: str,
         plan_name: str | None = None,
         subscription_end: datetime | None = None,
+        plan_id: int | None = None,
     ) -> bool:
-        """Отправляет уведомление об успешной оплате."""
+        """Отправляет уведомление об успешной оплате и добавляет пользователя в каналы."""
         message_parts = [
             "✅ Платёж успешно обработан!",
             "",
@@ -138,17 +142,66 @@ class UserNotificationService:
             if days_left > 0:
                 message_parts.append(f"⏰ Осталось дней: {days_left}")
         
-        message_parts.extend([
-            "",
-            "🎉 Спасибо за покупку! Теперь у тебя есть доступ ко всем закрытым каналам.",
-            "",
-            "Используй /channels, чтобы увидеть список доступных каналов.",
-        ])
+        message_parts.append("")
+        message_parts.append("🎉 Спасибо за покупку! Теперь у тебя есть доступ ко всем закрытым каналам.")
+        
+        # Пытаемся добавить пользователя в каналы
+        channel_links = []
+        if plan_id:
+            try:
+                from .channel_access import ChannelAccessService
+                from ..models.subscription_plan import SubscriptionPlan
+                
+                plan = await self.session.get(SubscriptionPlan, plan_id)
+                if plan:
+                    channel_service = ChannelAccessService(self.session)
+                    channel_results = await channel_service.add_user_to_channels(user, plan)
+                    
+                    for result in channel_results:
+                        if result.get("link"):
+                            channel_links.append({
+                                "name": result["channel_name"],
+                                "link": result["link"],
+                                "success": result.get("success", False),
+                            })
+            except Exception as exc:
+                logger.warning("Не удалось добавить пользователя в каналы: %s", exc)
+        
+        # Если есть каналы, добавляем информацию о них
+        if channel_links:
+            message_parts.append("")
+            message_parts.append("📚 Доступные каналы:")
+            for channel_info in channel_links:
+                if channel_info["success"]:
+                    message_parts.append(f"✅ {channel_info['name']}")
+                    if channel_info["link"]:
+                        message_parts.append(f"   🔗 {channel_info['link']}")
+                else:
+                    message_parts.append(f"📺 {channel_info['name']}")
+                    if channel_info["link"]:
+                        message_parts.append(f"   🔗 {channel_info['link']}")
+                    message_parts.append("   💡 Перейди по ссылке, чтобы вступить в канал")
+                message_parts.append("")
+        else:
+            message_parts.append("")
+            message_parts.append("Используй /channels, чтобы увидеть список доступных каналов.")
+        
+        # Создаем клавиатуру с кнопкой "Каналы"
+        reply_markup = {
+            "keyboard": [
+                [{"text": "📚 Каналы"}],
+                [{"text": "Купить подписку"}, {"text": "История платежей"}],
+                [{"text": "Статус"}, {"text": "Помощь"}],
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": False,
+        }
         
         return await self.send_message(
             telegram_id=user.telegram_id,
             text="\n".join(message_parts),
             bot_id=user.bot_id,
+            reply_markup=reply_markup,
         )
 
     async def send_subscription_expiring_notification(

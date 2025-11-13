@@ -97,6 +97,16 @@ class BroadcastService:
             if channel.bot_id != payload.bot_id:
                 raise ValueError("Канал не принадлежит указанному боту")
 
+        # Нормализуем scheduled_at в UTC, если он указан
+        scheduled_at = payload.scheduled_at
+        if scheduled_at is not None:
+            # Если datetime без timezone, считаем его UTC
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            else:
+                # Если есть timezone, конвертируем в UTC
+                scheduled_at = scheduled_at.astimezone(timezone.utc)
+        
         broadcast = ScheduledBroadcast(
             bot_id=payload.bot_id,
             channel_id=payload.channel_id,
@@ -107,7 +117,7 @@ class BroadcastService:
             user_ids=payload.user_ids or [],
             birthday_only=payload.birthday_only,
             media_files=payload.media_files or [],
-            scheduled_at=payload.scheduled_at,
+            scheduled_at=scheduled_at,
             status=BroadcastStatus(payload.status or "draft"),
             buttons=payload.buttons or {},
         )
@@ -159,7 +169,13 @@ class BroadcastService:
         if payload.media_files is not None:
             broadcast.media_files = payload.media_files
         if payload.scheduled_at is not None:
-            broadcast.scheduled_at = payload.scheduled_at
+            # Нормализуем scheduled_at в UTC
+            scheduled_at = payload.scheduled_at
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            else:
+                scheduled_at = scheduled_at.astimezone(timezone.utc)
+            broadcast.scheduled_at = scheduled_at
         if payload.status is not None:
             broadcast.status = BroadcastStatus(payload.status)
         if payload.buttons is not None:
@@ -203,20 +219,20 @@ class BroadcastService:
         elif broadcast.target_audience == BroadcastAudience.ACTIVE_SUBSCRIBERS:
             now = datetime.now(timezone.utc)
             base_query = base_query.join(Subscription, User.id == Subscription.user_id).where(
-                Subscription.is_active == True, Subscription.end_date > now
+                Subscription.is_active == True, Subscription.expires_at > now
             )
         elif broadcast.target_audience == BroadcastAudience.EXPIRED_SUBSCRIBERS:
             now = datetime.now(timezone.utc)
             base_query = base_query.join(Subscription, User.id == Subscription.user_id).where(
-                Subscription.is_active == False, Subscription.end_date < now
+                Subscription.is_active == False, Subscription.expires_at < now
             )
         elif broadcast.target_audience == BroadcastAudience.EXPIRING_SOON:
             now = datetime.now(timezone.utc)
             three_days_later = now + timedelta(days=3)
             base_query = base_query.join(Subscription, User.id == Subscription.user_id).where(
                 Subscription.is_active == True,
-                Subscription.end_date > now,
-                Subscription.end_date <= three_days_later,
+                Subscription.expires_at > now,
+                Subscription.expires_at <= three_days_later,
             )
         elif broadcast.target_audience == BroadcastAudience.NON_SUBSCRIBERS:
             base_query = base_query.outerjoin(Subscription, User.id == Subscription.user_id).where(
@@ -259,11 +275,18 @@ class BroadcastService:
         if broadcast.status == BroadcastStatus.COMPLETED:
             raise ValueError("Рассылка уже была отправлена")
 
-        # Получаем список получателей
-        recipients = await self._get_recipients(broadcast)
-        
-        if not recipients:
-            raise ValueError("Нет получателей для рассылки")
+        # Получаем список получателей (только если не указан канал)
+        recipients = []
+        if not broadcast.channel_id:
+            recipients = await self._get_recipients(broadcast)
+            if not recipients:
+                raise ValueError("Нет получателей для рассылки")
+        else:
+            # Если указан канал, проверяем, что канал существует
+            channel = await self.session.get(Channel, broadcast.channel_id)
+            if not channel:
+                raise ValueError(f"Канал с ID {broadcast.channel_id} не найден")
+            logger.info(f"Рассылка будет отправлена в канал {channel.channel_name} (ID: {channel.id})")
 
         # Получаем токен бота
         bot = await self.session.get(Bot, broadcast.bot_id)
@@ -305,6 +328,142 @@ class BroadcastService:
         errors = []
 
         async with httpx.AsyncClient(timeout=30.0) as client:
+            # Если указан канал, отправляем сообщение в канал
+            if broadcast.channel_id:
+                channel = await self.session.get(Channel, broadcast.channel_id)
+                if not channel:
+                    raise ValueError(f"Канал с ID {broadcast.channel_id} не найден")
+                
+                logger.info(f"Отправка в канал: id={channel.id}, channel_id={channel.channel_id}, username={channel.channel_username}")
+                
+                # Определяем chat_id для Telegram API
+                # Приоритет: 1) channel_username (если есть), 2) channel_id (если это числовой ID)
+                if channel.channel_username:
+                    chat_id = channel.channel_username
+                    if not chat_id.startswith("@"):
+                        chat_id = f"@{chat_id}"
+                    logger.info(f"Используется username для канала: {chat_id}")
+                else:
+                    # Используем channel_id - для Telegram API каналов это должен быть числовой ID
+                    # Пробуем преобразовать в int, если это число (Telegram API принимает и строку, и число)
+                    try:
+                        # Пробуем преобразовать в число для проверки формата
+                        chat_id_int = int(channel.channel_id)
+                        # Telegram API принимает числовой ID как строку или число
+                        # Используем строку для совместимости
+                        chat_id = str(chat_id_int)
+                        logger.info(f"Используется числовой channel_id для канала: {chat_id}")
+                    except ValueError:
+                        # Если не число, используем как есть (может быть username без @)
+                        chat_id = channel.channel_id
+                        logger.warning(f"channel_id не является числом, используется как строка: {chat_id}")
+                    
+                    channel_payload = {
+                        "chat_id": chat_id,
+                        "text": message_text,
+                    }
+                    if parse_mode:
+                        channel_payload["parse_mode"] = parse_mode
+                    
+                    # Если есть медиа файлы, отправляем их в канал
+                    if broadcast.media_files:
+                        first_media = broadcast.media_files[0]
+                        if first_media.get("type") == "photo" and first_media.get("file_id"):
+                            photo_url = f"https://api.telegram.org/bot{token}/sendPhoto"
+                            photo_payload = {
+                                "chat_id": chat_id,
+                                "photo": first_media["file_id"],
+                                "caption": message_text,
+                            }
+                            if parse_mode:
+                                photo_payload["parse_mode"] = parse_mode
+                            try:
+                                response = await client.post(photo_url, json=photo_payload)
+                                response.raise_for_status()
+                                sent_count += 1
+                                logger.info(f"Сообщение отправлено в канал {channel.channel_id}")
+                            except httpx.HTTPStatusError as exc:
+                                error_detail = exc.response.text if exc.response else str(exc)
+                                try:
+                                    error_json = exc.response.json() if exc.response else {}
+                                    error_description = error_json.get("description", error_detail)
+                                    error_code = error_json.get("error_code", "unknown")
+                                except Exception:
+                                    error_description = error_detail
+                                    error_code = "unknown"
+                                
+                                full_error = f"Channel {chat_id}: HTTP {exc.response.status_code if exc.response else 'unknown'} - {error_description} (code: {error_code})"
+                                errors.append(full_error)
+                                failed_count += 1
+                                logger.error(f"Ошибка отправки фото в канал {chat_id}: {full_error}")
+                                logger.error(f"Payload был: {photo_payload}")
+                                # Если это ошибка "chat not found" или "bot is not a member", выбрасываем исключение
+                                if "chat not found" in error_description.lower() or "not a member" in error_description.lower():
+                                    raise ValueError(f"Бот не является участником канала {chat_id} или канал не найден: {error_description}")
+                            except Exception as e:
+                                errors.append(f"Channel {chat_id}: {str(e)}")
+                                failed_count += 1
+                                logger.error(f"Ошибка отправки в канал {chat_id}: {e}")
+                        else:
+                            # Для других типов медиа отправляем обычное сообщение
+                            try:
+                                response = await client.post(url, json=channel_payload)
+                                response.raise_for_status()
+                                sent_count += 1
+                                logger.info(f"Сообщение отправлено в канал {chat_id}")
+                            except httpx.HTTPStatusError as exc:
+                                error_detail = exc.response.text if exc.response else str(exc)
+                                try:
+                                    error_json = exc.response.json() if exc.response else {}
+                                    error_description = error_json.get("description", error_detail)
+                                    error_code = error_json.get("error_code", "unknown")
+                                except Exception:
+                                    error_description = error_detail
+                                    error_code = "unknown"
+                                
+                                full_error = f"Channel {chat_id}: HTTP {exc.response.status_code if exc.response else 'unknown'} - {error_description} (code: {error_code})"
+                                errors.append(full_error)
+                                failed_count += 1
+                                logger.error(f"Ошибка отправки медиа в канал {chat_id}: {full_error}")
+                                logger.error(f"Payload был: {channel_payload}")
+                                # Если это ошибка "chat not found" или "bot is not a member", выбрасываем исключение
+                                if "chat not found" in error_description.lower() or "not a member" in error_description.lower():
+                                    raise ValueError(f"Бот не является участником канала {chat_id} или канал не найден: {error_description}")
+                            except Exception as e:
+                                errors.append(f"Channel {chat_id}: {str(e)}")
+                                failed_count += 1
+                                logger.error(f"Ошибка отправки в канал {chat_id}: {e}")
+                    else:
+                        # Отправляем текстовое сообщение в канал
+                        try:
+                            response = await client.post(url, json=channel_payload)
+                            response.raise_for_status()
+                            sent_count += 1
+                            logger.info(f"Сообщение отправлено в канал {chat_id}")
+                        except httpx.HTTPStatusError as exc:
+                            error_detail = exc.response.text if exc.response else str(exc)
+                            try:
+                                error_json = exc.response.json() if exc.response else {}
+                                error_description = error_json.get("description", error_detail)
+                                error_code = error_json.get("error_code", "unknown")
+                            except Exception:
+                                error_description = error_detail
+                                error_code = "unknown"
+                            
+                            full_error = f"Channel {chat_id}: HTTP {exc.response.status_code if exc.response else 'unknown'} - {error_description} (code: {error_code})"
+                            errors.append(full_error)
+                            failed_count += 1
+                            logger.error(f"Ошибка отправки в канал {chat_id}: {full_error}")
+                            logger.error(f"Payload был: {channel_payload}")
+                            # Если это ошибка "chat not found" или "bot is not a member", выбрасываем исключение
+                            if "chat not found" in error_description.lower() or "not a member" in error_description.lower():
+                                raise ValueError(f"Бот не является участником канала {chat_id} или канал не найден: {error_description}")
+                        except Exception as e:
+                            errors.append(f"Channel {chat_id}: {str(e)}")
+                            failed_count += 1
+                            logger.error(f"Ошибка отправки в канал {chat_id}: {e}")
+
+            # Отправляем сообщения пользователям
             for idx, user in enumerate(recipients):
                 # Добавляем небольшую задержку между отправками (30 сообщений в секунду - лимит Telegram)
                 if idx > 0 and idx % 30 == 0:
@@ -358,10 +517,11 @@ class BroadcastService:
         # Обновляем статус и статистику
         broadcast.status = BroadcastStatus.COMPLETED
         broadcast.sent_at = datetime.now(timezone.utc)
+        total_recipients = len(recipients) + (1 if broadcast.channel_id else 0)
         broadcast.stats = {
             "sent": sent_count,
             "failed": failed_count,
-            "total": len(recipients),
+            "total": total_recipients,
             "errors": errors[:10],  # Сохраняем только первые 10 ошибок
         }
         await self.session.commit()
@@ -369,7 +529,7 @@ class BroadcastService:
         return {
             "sent": sent_count,
             "failed": failed_count,
-            "total": len(recipients),
+            "total": total_recipients,
         }
 
     async def _get_recipients(self, broadcast: ScheduledBroadcast) -> list[User]:
@@ -394,20 +554,20 @@ class BroadcastService:
         elif broadcast.target_audience == BroadcastAudience.ACTIVE_SUBSCRIBERS:
             now = datetime.now(timezone.utc)
             stmt = stmt.join(Subscription, User.id == Subscription.user_id).where(
-                Subscription.is_active == True, Subscription.end_date > now
+                Subscription.is_active == True, Subscription.expires_at > now
             )
         elif broadcast.target_audience == BroadcastAudience.EXPIRED_SUBSCRIBERS:
             now = datetime.now(timezone.utc)
             stmt = stmt.join(Subscription, User.id == Subscription.user_id).where(
-                Subscription.is_active == False, Subscription.end_date < now
+                Subscription.is_active == False, Subscription.expires_at < now
             )
         elif broadcast.target_audience == BroadcastAudience.EXPIRING_SOON:
             now = datetime.now(timezone.utc)
             three_days_later = now + timedelta(days=3)
             stmt = stmt.join(Subscription, User.id == Subscription.user_id).where(
                 Subscription.is_active == True,
-                Subscription.end_date > now,
-                Subscription.end_date <= three_days_later,
+                Subscription.expires_at > now,
+                Subscription.expires_at <= three_days_later,
             )
         elif broadcast.target_audience == BroadcastAudience.NON_SUBSCRIBERS:
             stmt = stmt.outerjoin(Subscription, User.id == Subscription.user_id).where(

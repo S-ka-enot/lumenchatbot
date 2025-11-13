@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from ..core.config import settings
 from .backups import setup_backup_job
+from .broadcasts import setup_broadcast_jobs
 from .payments import setup_payment_jobs
 from .subscriptions import setup_subscription_jobs
 
@@ -15,6 +16,7 @@ def start_scheduler() -> None:
         setup_backup_job(scheduler)
         setup_payment_jobs(scheduler)
         setup_subscription_jobs(scheduler)
+        setup_broadcast_jobs(scheduler)
         scheduler.start()
 
 

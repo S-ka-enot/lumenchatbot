@@ -73,9 +73,10 @@ async def create_payment_and_subscription(
     subscription = Subscription(
         bot_id=bot.id,
         user_id=user.id,
+        channel_id=1,  # Временное значение, нужно получить из плана
         payment_id=payment.id,
-        start_date=now,
-        end_date=now + timedelta(days=days),
+        started_at=now,
+        expires_at=now + timedelta(days=days),
         is_active=True,
         auto_renew=False,
     )
