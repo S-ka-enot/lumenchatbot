@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "LumenPay Bot – платформа для управления платными подписками в Telegram."
 authors = ["Lumen Team <team@example.com>"]
 license = "Proprietary"
-readme = "README.md"
 packages = [
   { include = "backend" },
   { include = "bot" },

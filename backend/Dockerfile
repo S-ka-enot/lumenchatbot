@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
+# Copy dependency files and project metadata
 COPY pyproject.toml poetry.lock ./
 
 # Install Poetry and dependencies
