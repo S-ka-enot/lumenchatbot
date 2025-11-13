@@ -21,6 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+    # If channels table does not exist (fresh DB), skip this migration step.
+    if not inspector.has_table("channels"):
+        return
+
     columns = {col["name"] for col in inspector.get_columns("channels")}
     if "invite_link" not in columns:
         op.add_column('channels', sa.Column('invite_link', sa.String(length=512), nullable=True))
@@ -29,6 +33,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+    # If channels table does not exist, nothing to downgrade here.
+    if not inspector.has_table("channels"):
+        return
+
     columns = {col["name"] for col in inspector.get_columns("channels")}
     if "invite_link" in columns:
         op.drop_column('channels', 'invite_link')
