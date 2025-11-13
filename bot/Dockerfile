@@ -24,7 +24,10 @@ COPY --from=base /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.
 COPY --from=base /usr/local/bin /usr/local/bin
 
 # Copy source code
-COPY . .
+# NOTE: This Dockerfile expects build context to be the PROJECT ROOT (.), not bot/
+# In Coolify, set Base Directory = . (root) and Dockerfile Location = bot/Dockerfile
+COPY bot/ ./bot/
+COPY config/ ./config/
 
 # Create logs directory
 RUN mkdir -p logs
